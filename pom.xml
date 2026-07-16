@@ -15,29 +15,29 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
 
         <!-- Lance Flink Connector 版本 -->
         <lance-flink.version>1.0.0-SNAPSHOT</lance-flink.version>
 
         <!-- Lance 依赖版本 -->
-        <lance.version>0.23.3</lance.version>
-        <lance-namespace.version>0.5.4</lance-namespace.version>
+        <lance.version>7.0.0</lance.version>
+        <lance-namespace.version>0.7.5</lance-namespace.version>
 
         <!-- Arrow 版本 (各版本模块可覆盖) -->
-        <arrow.version>14.0.0</arrow.version>
+        <arrow.version>18.3.0</arrow.version>
 
-        <!-- Flink 多版本 -->
-        <flink117.version>1.17.2</flink117.version>
+        <!-- Flink 多版本（注：Flink 1.17 因内置 Calcite 在 JDK 8 下存在已知 assertion/IAE bug，且
+             Flink 1.17 已于 2024-10 EOL，本工程不再支持，仅维护 1.18 / 1.19 / 1.20） -->
         <flink118.version>1.18.1</flink118.version>
         <flink119.version>1.19.1</flink119.version>
         <flink120.version>1.20.0</flink120.version>
         <!-- 默认 Flink 版本，子模块覆盖 -->
-        <flink.version>${flink117.version}</flink.version>
+        <flink.version>${flink118.version}</flink.version>
 
         <!-- 测试依赖版本 -->
-        <junit.version>5.9.3</junit.version>
+        <junit.version>5.10.1</junit.version>
         <slf4j.version>1.7.36</slf4j.version>
         <log4j.version>2.20.0</log4j.version>
         <mockito.version>5.3.1</mockito.version>
@@ -49,20 +49,14 @@
             <!-- ==================== Lance 依赖 ==================== -->
             <dependency>
                 <groupId>org.lance</groupId>
-                <artifactId>lance-namespace-core</artifactId>
-                <version>${lance-namespace.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>org.lance</groupId>
-                <artifactId>lance-namespace-apache-client</artifactId>
-                <version>${lance-namespace.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.lancedb</groupId>
                 <artifactId>lance-core</artifactId>
                 <version>${lance.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.slf4j</groupId>
+                        <artifactId>slf4j-api</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <!-- ==================== Apache Arrow ==================== -->
@@ -265,7 +259,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-shade-plugin</artifactId>
-                    <version>3.5.0</version>
+                    <version>3.6.2</version>
                     <executions>
                         <execution>
                             <phase>package</phase>
@@ -386,7 +380,7 @@
                                         <version>3.6.3</version>
                                     </requireMavenVersion>
                                     <requireJavaVersion>
-                                        <version>[1.8,)</version>
+                                        <version>[11,)</version>
                                     </requireJavaVersion>
                                     <banDuplicatePomDependencyVersions/>
                                 </rules>
@@ -449,7 +443,6 @@
     </build>
 
     <modules>
-        <module>lance-flink-1.17</module>
         <module>lance-flink-1.18</module>
         <module>lance-flink-1.19</module>
         <module>lance-flink-1.20</module>
