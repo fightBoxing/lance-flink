@@ -193,4 +193,122 @@ class LanceUpsertSinkITCase {
             assertThat(ds.countRows("name = 'old'")).isZero();
         }
     }
+
+    @Test
+    @DisplayName("replaying the same upsert batch (checkpoint replay) is idempotent")
+    void replaySameUpsertBatchIsIdempotent() throws Exception {
+        String path = tempDir.resolve("replay_upsert").toString();
+        LanceUpsertSink sink = new LanceUpsertSink(options(path), rowType(),
+                Arrays.asList(PRIMARY_KEYS), KEY_INDICES);
+
+        sink.open(new Configuration());
+        try {
+            // First flush (checkpoint 1 completed).
+            sink.invoke(row(1L, "alice", RowKind.INSERT), null);
+            sink.invoke(row(2L, "bob", RowKind.INSERT), null);
+            sink.flush();
+            assertThat(countRows(path)).isEqualTo(2L);
+
+            // Replay the same batch (checkpoint 1 failed and was retried).
+            sink.invoke(row(1L, "alice", RowKind.INSERT), null);
+            sink.invoke(row(2L, "bob", RowKind.INSERT), null);
+            sink.flush();
+        } finally {
+            sink.close();
+        }
+
+        // Idempotent: replay must not duplicate rows.
+        assertThat(countRows(path)).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("replaying a delete batch (checkpoint replay) is idempotent")
+    void replayDeleteBatchIsIdempotent() throws Exception {
+        String path = tempDir.resolve("replay_delete").toString();
+        LanceUpsertSink sink = new LanceUpsertSink(options(path), rowType(),
+                Arrays.asList(PRIMARY_KEYS), KEY_INDICES);
+
+        sink.open(new Configuration());
+        try {
+            sink.invoke(row(1L, "alice", RowKind.INSERT), null);
+            sink.flush();
+            assertThat(countRows(path)).isEqualTo(1L);
+
+            // First delete flush.
+            sink.invoke(row(1L, "alice", RowKind.DELETE), null);
+            sink.flush();
+            assertThat(countRows(path)).isZero();
+
+            // Replay the delete (checkpoint 2 failed and was retried).
+            sink.invoke(row(1L, "alice", RowKind.DELETE), null);
+            sink.flush();
+        } finally {
+            sink.close();
+        }
+
+        // Idempotent: replaying a delete of an absent key must remain a no-op.
+        assertThat(countRows(path)).isZero();
+    }
+
+    @Test
+    @DisplayName("two subtasks concurrently write distinct keys to an existing dataset")
+    void twoSubtasksConcurrentWriteToExistingDataset() throws Exception {
+        String path = tempDir.resolve("concurrent_existing").toString();
+
+        // Seed the dataset with key=1 so it already exists.
+        LanceUpsertSink seeder = new LanceUpsertSink(options(path), rowType(),
+                Arrays.asList(PRIMARY_KEYS), KEY_INDICES);
+        seeder.open(new Configuration());
+        seeder.invoke(row(1L, "one", RowKind.INSERT), null);
+        seeder.flush();
+        seeder.close();
+
+        // Two subtasks open at the same base version.
+        LanceUpsertSink s1 = new LanceUpsertSink(options(path), rowType(),
+                Arrays.asList(PRIMARY_KEYS), KEY_INDICES);
+        LanceUpsertSink s2 = new LanceUpsertSink(options(path), rowType(),
+                Arrays.asList(PRIMARY_KEYS), KEY_INDICES);
+        s1.open(new Configuration());
+        s2.open(new Configuration());
+
+        try {
+            s1.invoke(row(2L, "two", RowKind.INSERT), null);
+            s1.flush();
+            s2.invoke(row(3L, "three", RowKind.INSERT), null);
+            s2.flush();
+        } finally {
+            s1.close();
+            s2.close();
+        }
+
+        // Both writes must land: no write conflict, no lost row.
+        assertThat(countRows(path)).isEqualTo(3L);
+    }
+
+    @Test
+    @DisplayName("two subtasks concurrently first-write distinct keys without data loss")
+    void twoSubtasksConcurrentFirstWrite() throws Exception {
+        String path = tempDir.resolve("concurrent_first").toString();
+
+        // Dataset does NOT exist yet. Both subtasks open, then first-write.
+        LanceUpsertSink s1 = new LanceUpsertSink(options(path), rowType(),
+                Arrays.asList(PRIMARY_KEYS), KEY_INDICES);
+        LanceUpsertSink s2 = new LanceUpsertSink(options(path), rowType(),
+                Arrays.asList(PRIMARY_KEYS), KEY_INDICES);
+        s1.open(new Configuration());
+        s2.open(new Configuration());
+
+        try {
+            s1.invoke(row(1L, "one", RowKind.INSERT), null);
+            s1.flush();
+            s2.invoke(row(2L, "two", RowKind.INSERT), null);
+            s2.flush();
+        } finally {
+            s1.close();
+            s2.close();
+        }
+
+        // The second first-write must not clobber the first (regression: Overwrite clobbering).
+        assertThat(countRows(path)).isEqualTo(2L);
+    }
 }

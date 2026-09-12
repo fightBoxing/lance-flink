@@ -203,6 +203,15 @@ public class LanceUpsertSink extends RichSinkFunction<RowData> implements Checkp
      */
     private void createDataset(List<RowData> rows) throws IOException {
         String datasetPath = options.getPath();
+
+        // A peer subtask may have created the dataset since this sink opened (multi-subtask first
+        // write). Falling back to merge-insert avoids clobbering its data with Overwrite.
+        if (Files.exists(Paths.get(datasetPath))) {
+            this.dataset = Dataset.open(datasetPath, allocator);
+            mergeInsertRows(rows);
+            return;
+        }
+
         try (VectorSchemaRoot root = VectorSchemaRoot.create(arrowSchema, allocator)) {
             converter.toVectorSchemaRoot(rows, root);
 
